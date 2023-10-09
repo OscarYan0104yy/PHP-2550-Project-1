@@ -1,0 +1,465 @@
+---
+title: "Project_1_EDA"
+author: "Yu Yan"
+date: "2023-10-05"
+header-includes:
+  - \usepackage{placeins}
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+knitr::opts_chunk$set(error = F)
+knitr::opts_chunk$set(warning = F)
+knitr::opts_chunk$set(message = F)
+#knitr::opts_chunk$set(fig.width=8, fig.height=4) 
+library(tidyverse)
+library(kableExtra)
+library(mice)
+library(gtsummary)
+library(psych)
+library(ggridges)
+```
+
+# Report Introduction
+In this report, it addresses preliminary exploratory data analysis to Dr. Lauren Micalizzi's project from the Department Behavioral and Social Sciences. The project is about is examining the association between smoking during pregnancy (SDP) and environmental tobacco smoke (ETS) exposure and self-regulation, externalizing behavior, and substance use. The whole project was divided to two parts as a follow-up study, the original study was conducted around in 2017 on about 800 pregnant mother and a new study incorporating a subset of about 100 pairs mother and children from the original study. Our data contains information from both study. This report aims to help answer one of the three primary aims that Dr. Lauren have, in more detail: Examine effects of SDP/ETS on adolescent self-regulation, substance use, and externalizing.
+
+After looking at the data dictionary, the plan of this exploratory data analysis is as follows: after conducting data quality checks, create both timing and intensity variables from the existing columns. The meaning of both timing and intensity columns and how they are created will be explained in more detail in the later section. As the goal is to examine effects of SDP/ETS, those timing and intensity variables might be a method of quantifying the effects brought about by SDP/ETS. The main analysis is to explore the relationship of those timing and intensity variables with the scores from different questionnaires corresponding to each of the three dimensions of adolescent behavior of interest (self-regulation, substance use, and externalizing). We establish our hypothesis as follows: Children with earlier or greater exposure to smoke will demonstrate poorer self-regulation, earlier SU initiation, faster SU escalation, and more EXT than children with later or lighter exposure. As we are all aware of the bad effects of SDP/EXT, we would like to take a step further here trying to understand are there a difference as to earlier vs later, lighter vs intense and potentially quantify how much the differences are if there are any. 
+
+
+# Data Dimention
+```{r}
+# Dimension checking
+df <- read.csv('project1.csv')
+print(paste0('The Dimension of Data: ',nrow(df), ' rows, and ', ncol(df), ' columns'))
+
+
+# Check how many unique patients
+print(paste0('There are ',length(unique(df$parent_id)),' Patients'))
+
+```
+
+# Missing Data and Outlier
+We started doing missingness pattern checking of the data. By looking at the 10 most missing columns, we found out one interesting thing that almost all observations (49 observation in total), are lacking four particular columns, num_cigs_30 (missing 48), num_e_cigs_30(missing 47),num_mj_30(missing 46),num_alc_30(missing 45). By referring to the code book, these are the number of days in the last 30 days for teenagers to use cigratte, e_cigrattes, marijuana, and alcohol respectively. As the only four direct variables that we have relating to teenagers' substance use behavior, this implies that either the majority of teenagers didn't perform SU related activities, or the data is simply missing those variables.
+
+```{r}
+# Missing checking
+# Some Missing in the data is '' convert all to be NA 
+df = as.data.frame(apply(df, 2, function(x) ifelse(x=='',NA,x)))
+
+# Compute missing summary table
+missing_sum <- as.data.frame(apply(df[,-1], 2, function(x) sum(is.na(x)))) %>% rename('Missing_num'= "apply(df[, -1], 2, function(x) sum(is.na(x)))") %>% 
+  filter(Missing_num!=0) %>% 
+  arrange(desc(Missing_num)) %>% 
+  mutate('Missing_Pct'= Missing_num / nrow(df) ) 
+
+# Report missing summary table
+missing_sum[1:10,] %>%
+  kable(booktabs = TRUE, caption = "Missingness Count and Percentage of columns") %>%
+  kable_styling(full_width = TRUE, latex_options = "hold_position") 
+
+ever_sum <- apply(df[,c("cig_ever","e_cig_ever","mj_ever","alc_ever")], 2, function(x) x==' 1') %>% colSums(.,na.rm = T)
+
+# Report summary of substance related questions
+ever_sum %>%
+  kable(booktabs = TRUE, caption = "Number of Teenagers answered YES Substance Use related questions", col.names = 'Number') %>%
+  kable_styling(full_width = TRUE, latex_options = "hold_position") 
+```
+
+And as we calculated the number of teenagers that answered YES in those preceding columns, only a small amount of them answered YES. This may impose bias if we were to look into hypothesis of whether early exposure to SDP lead to earlier SU initiation or faster SU escalation. With this initial finding bearing in mind, we keep the analysis forward by identifying outliers.
+
+We identified that in the column of mom_cig, we have two very obvious outliers probably due to bad reporting of data. 
+```{r}
+# Identify outliers
+ol = as.data.frame(as.matrix(cbind(df$parent_id[c(1,26,37)],df$mom_numcig[c(1,26,37)])))
+names(ol) = c('parent_id','mom_numcig')
+
+# Report outliers
+ol %>% kable(booktabs = TRUE, caption = "Irregular reporting of mom numcig") %>%
+  kable_styling(full_width = TRUE, latex_options = "hold_position") 
+```
+
+For other continuous variables like composite score from the three types of questionaire (Brief Problem Moniter, Parental Knowledge, and Emotional Regulation), we perform univariate analysis looking at their distribution. 
+
+# Univariate Analysis 
+By plotting univariate distribution of all the different bpm scores, we can see that they have approximately similar distribution of left-skewed.\ 
+```{r,fig.height = 4, fig.width = 8, fig.align = "center"}
+# Univariate analysis with Brief problem moniter
+df %>% pivot_longer(c( "bpm_att","bpm_ext","bpm_int","bpm_att_p","bpm_ext_p","bpm_int_p","bpm_att_a","bpm_ext_a","bpm_int_a"),names_to ='score_type',values_to = 'score') %>% 
+ggplot(aes(x = as.numeric(score), y = as.factor(score_type), fill=as.factor(score_type))) + geom_density_ridges(scale = 0.9) + 
+       labs(x='Score',y='Brief Problem Moniter',title='Distribution of Brief Problem Moniter Scores',fill='Brief Problem Moniter Types') + 
+       theme(
+        axis.title=element_text(size=10,face="bold"))
+```
+
+
+By plotting univariate distribution of all the different emotion regulation scores, we can see that they have approximately similar normal distribution and erq_cog_a is a bit right skewed.\
+```{r, fig.height = 4, fig.width = 8, fig.align = "center"}
+# Univariate analysis with emotion regulation 
+df %>% pivot_longer(c("erq_cog_a","erq_exp_a","erq_cog","erq_exp"),names_to ='score_type',values_to = 'score') %>% 
+ggplot(aes(x = as.numeric(score), y = as.factor(score_type), fill=as.factor(score_type))) + geom_density_ridges(scale = 0.9) + 
+       labs(x='Score',y='Emotional Regulation',title='Distribution of Emotional Regulation Scores',fill='Emotion Regulation Types') + 
+       theme(
+        axis.title=element_text(size=10,face="bold"))
+```
+
+
+By plotting univariate distribution of all the different bpm scores, we can see that they have approximately similar distribution of right-skewed.\
+```{r,fig.height = 4, fig.width = 8, fig.align = "center"}
+# Univariate analysis with parental knowledge 
+df %>% pivot_longer(c('pmq_parental_knowledge','pmq_child_disclosure','pmq_parental_solicitation','pmq_parental_control','ppmq_parental_knowledge','ppmq_child_disclosure','ppmq_parental_solicitation','ppmq_parental_control'),names_to ='score_type',values_to = 'score') %>% 
+ggplot(aes(x = as.numeric(score), y = as.factor(score_type), fill=as.factor(score_type))) + geom_density_ridges(scale = 0.9) + 
+       labs(x='Score',y='Parental Knowledge',title='Distribution of Parental Knowledge Scores',fill='Parental Knowledge Types') + 
+       theme(
+        axis.title=element_text(size=10,face="bold"))
+```
+
+In conclusion, by looking at univariate distribution of each subcategory of the questionaire, we do not observe any irregular patterns of the scores. This ensures the next step of our exploratory analysis.
+
+
+```{r}
+# Transferring scores and lab test to be numeric
+
+score_col = c('bpm_att','bpm_ext','bpm_int','erq_cog','erq_exp','pmq_parental_knowledge','pmq_child_disclosure','pmq_parental_solicitation','pmq_parental_control','erq_cog_a','erq_exp_a','bpm_att_p','bpm_ext_p','bpm_int_p','ppmq_parental_knowledge','ppmq_child_disclosure','ppmq_parental_solicitation','ppmq_parental_control','bpm_att_a','bpm_ext_a','bpm_int_a','swan_hyperactive','swan_inattentive','cotimean_34wk','cotimean_pp6mo','cotimean_pp6mo_baby',"num_cigs_30","num_e_cigs_30","num_mj_30","num_alc_30")
+
+df = df %>% mutate_at(score_col, as.numeric)
+```
+
+```{r}
+# Correct swan vals
+swan_na = which(df$parent_id%in%c(50502,51202,51602,52302,53002,53502,53902,54402,54602,54702))
+df$swan_hyperactive[swan_na] <- NA
+df$swan_inattentive[swan_na] <- NA
+```
+
+# Data Tranformation
+
+One of the main process of data transformation follows this section. As explained at the analysis plan in the beginning, we are creating both timing and intensity variables to evaluate the effects of SDP/EXT in a quantitative and visualizing way. Based off the variables that we have, we plan to create timing variables in two ways. The first one is a binary variable divided in terms of prenatal vs postnatal. Using this variable we can see how in a big picture exposure first occurred at prenatal period or postnatal would impose effects. For prenatal, we have variables including mom_smoke from 16 weeks pregnant to 32 weeks, as well as lab recording of Urine cotinine in mothers at 34 weeks gestation. So any observation whose first exposure happened in these four period would be given a label of 'prenatal'. For postnatal, we have variables including mom smoke postpartum from visit 1 to 12 weeks, lab recording of Urine cotinine in both mothers and children at 6 month postpartum, and smoke exposure from mom or partner from begin of postpartum til 5 years. As a note, the exposure variables are retrospective of mothers at the new study. So any observation whose first exposure happened in these four period would be given a label of 'postnatal'.
+
+The second way is to look deeper into each of the periods. In addition, as the aim is targeting, we are primarily interested in the effects of SDP and ETS, we could also incorporate this dividing in the second way of creating timing and intensity variables. Basically, for both natal periods, we subdivided their respective first exposure within that period and intensity as well. For intensity, we coded as sum of presense of all the related smoke or exposure variables mentioned above. So for prenatal, we named the timing variable as 'trimester', since we set the levels of 1,2,3 to indicate first,second, and third trimester for which the baby's initial smoke exposure. And intensity as 'trimester_int' for the sum of presense of exposure in the variables. For the lab Urine cotinine values, we set a level of bigger than 0 as a presense of smoke exposure for baby and bigger than 10 for mother as indication of smoker or exposed to second hand smoke. 
+
+For postnatal, transformation is quite similar except for the time point of 6 month postpartum. For this time point, we have all three of self-reported smoke, lab Urine cotinine and smoke exposure from mom or partner. Due to the nature of self-reported survey typed questions and its validity problems, when coding for postpartum timing, in the level of 6-momth, we primarily look at the presense from lab Urine cotinine values and mask the other two variables by it. The postpartum timing variable is named 'postpartum' and inteisity 'postpartum_int'.
+
+Moreover, considering the SDP vs ETS, we can say that prenatal variables (trimester,trimester_int) corresponds to smoke during pregnancy since at thses stages, the mother is still in pregnancy and bay hasn't born yet. For ETS, we can say that postnatal variables (postpartum,postpartum_int) corresponds to environmental tobacco smoke since the baby is currently out of the mother's uterus and any surrounding environmental expsure to tobacco would be considered exposure. This is also why we set the level of baby lab Urine cotinine to be if it is bigger than 0. 
+
+Here's the summary of the variables that we generated at this stage.
+
+
+```{r}
+# coti indicator
+df$cotimean_34wk_1 <- ifelse(df$cotimean_34wk != 0,"1","0")
+
+# trimester timing, meaning the first trimester this observation was exposed to SDP
+df <- df %>% mutate(trimester = ifelse(mom_smoke_16wk%in%'1=Yes'|mom_smoke_22wk%in%'1=Yes',2,
+                                       ifelse(mom_smoke_32wk%in%'1=Yes'|cotimean_34wk_1%in%'1',3, NA)))
+
+# trimester intensity
+df <- df %>% mutate(trimester_int = rowSums(apply(select(.,c(mom_smoke_16wk,mom_smoke_22wk,mom_smoke_32wk,cotimean_34wk_1))
+                                             ,2, function(x) x %in% c("1",'1=Yes')), na.rm=TRUE))
+
+
+#cbind(df$trimester,df$trimester_int)
+
+# cotimean indicator
+df$cotimean_pp6mo_baby_1 = ifelse(df$cotimean_pp6mo_baby != 0,"1","0")
+
+# postpartum timing, meaning the first postpartum timepoint collected in the dataset, this observation was exposed to SDP
+df <- df %>% mutate(postpartum = ifelse(mom_smoke_pp1%in%'1=Yes',1,
+                                 ifelse(mom_smoke_pp2%in%'1=Yes',2,
+                                 ifelse(mom_smoke_pp12wk%in%'1=Yes',3,
+                                 #ifelse(mom_smoke_pp6mo=='1=Yes',4,
+                                 ifelse(cotimean_pp6mo_baby_1%in%'1',4,
+                                 ifelse(df$smoke_exposure_12mo%in%' 1',5,
+                                 ifelse(smoke_exposure_2yr%in%' 1',6,
+                                 ifelse(smoke_exposure_3yr%in%' 1',7,
+                                 ifelse(smoke_exposure_4yr%in%' 1',8,
+                                 ifelse(smoke_exposure_5yr%in%' 1',9, NA))))))))))
+
+# combine early pp for intensity coding
+df <- df %>% mutate(early_post = ifelse(mom_smoke_pp1 %in% '1=Yes'|mom_smoke_pp2 %in% '1=Yes'|mom_smoke_pp12wk %in% '1=Yes','1',NA))
+
+# cotimean indicator
+df$cotimean_pp6mo_1 = ifelse(df$cotimean_pp6mo > 10,"1","0")
+
+
+
+df <- df %>% mutate(postpartum_int = rowSums(apply(select(.,c(early_post,cotimean_pp6mo_1,cotimean_pp6mo_baby_1,smoke_exposure_12mo,smoke_exposure_2yr,smoke_exposure_3yr,smoke_exposure_4yr,smoke_exposure_5yr)),2, function(x) x %in% c(" 1",'1=Yes','1')), na.rm=TRUE))
+
+
+
+# Timing variable, in terms of first exposure occured at prenatal vs postnatal
+df = df %>% mutate(natal = ifelse(mom_smoke_16wk%in%'1=Yes'|mom_smoke_22wk%in%'1=Yes'|
+                                  mom_smoke_32wk%in%'1=Yes'|cotimean_34wk_1%in%'1','Prenatal', 
+                           ifelse(mom_smoke_pp1%in%'1=Yes'|mom_smoke_pp2%in%'1=Yes'|mom_smoke_pp12wk%in%'1=Yes'|
+                                  smoke_exposure_6mo%in%' 1'|smoke_exposure_12mo%in%' 1'|
+                                  mom_smoke_pp6mo%in%'1=Yes'|cotimean_pp6mo_baby_1%in%'1'|cotimean_pp6mo_1%in%'1'|
+                                  smoke_exposure_2yr%in%' 1'|smoke_exposure_3yr%in%' 1'|smoke_exposure_4yr%in%' 1'|smoke_exposure_5yr%in%' 1'
+                                  ,'Postnatal', NA )))
+
+```
+
+```{r}
+# Report summary of prenatal timing and intensity 
+table(df$trimester,df$trimester_int)%>% 
+  kable(booktabs = TRUE, caption = "Summary of Prenatal Variable",row.names = T ) %>%
+kable_styling(full_width = F, latex_options = "hold_position") %>% add_footnote(c("Row is time, column is intensity"))
+
+# Report summary of postnatal timing and intensity 
+table(df$postpartum,df$postpartum_int)%>% 
+  kable(booktabs = TRUE, caption = "Summary of Postpartum Variable",row.names = T ) %>%
+kable_styling(full_width = F, latex_options = "hold_position") %>% add_footnote(c("Row is time, column is intensity"))
+```
+
+From the summary and distribution of the variables that we created, we can see that our data is highly unbalanced. There are a lot of cells that do not have any observations. We may continue for the purpose of conducting exploratory analysis to identify potential patterns, but the current data quality may not be a good choice for performing any statisticl analysis.
+
+# Prenatal VS Postnatal
+We then compute this table looking at how all the scores differ in terms of prenatal vs postnatal to look for general patterns. 
+```{r}
+# Summary by natal
+df %>% select(natal, bpm_att , bpm_ext , bpm_int , erq_cog , erq_exp , pmq_parental_knowledge , pmq_child_disclosure , pmq_parental_solicitation , pmq_parental_control , erq_cog_a , erq_exp_a , bpm_att_p , bpm_ext_p , bpm_int_p , ppmq_parental_knowledge , ppmq_child_disclosure , ppmq_parental_solicitation , ppmq_parental_control , bpm_att_a , bpm_ext_a , bpm_int_a , swan_hyperactive , swan_inattentive ) %>%
+      tbl_summary(by = natal,
+        missing_text = "NA",
+        type = list(everything() ~ 'continuous'
+                   ),
+    statistic = all_continuous() ~ "{mean}") %>%
+      add_n() %>% add_p(test=all_continuous() ~ "t.test") %>% as_gt()
+```
+
+Sadly we do not obtain any significant P-values and the score differences vary by type: some have larger score prenatal, some larger at postnatal. It does not seem to have any meaningful patterns at this stage, we shall proceed by looking at their respective sub timing and intensity in terms of bivariate comparisons.
+
+# Bivariate comparison
+
+## Self-Regulation
+Based off PPT and resources, Self-regulation means the ability to understand and manage your own behavior and reactions, and it contains behaviors in the following four dimensions: executive function, emotion regulation, effortful control, vagal tone. Given what we have in the data set, we decided that the following variables are related to adolescent self-regulation issues: emotional regulation scores of the adolescent themselves; attention-relating scores on the Brief Problem Monitor questionnaire of both the adolescent own answering, and parents evaluation on their child; lastly, we think the SWAN response would also be relevant as the conditions of ADHD reasonably indicate that the child has self-regulation problems such as easily get distracted. Here's the finding that we have:
+
+The following two table (TABLE 7,8) displays the summary of the selected scores stratified by timing and intensity, and each period (prenatal and postnatal) has one table. The first row of grouping indicate timing and the second indicate intensity. This table is intended to show two things: 1. under the same first exposure timing, what the score would change as intensity changes; 2. for the same intensity level, what would the effects of first exposure timing be. 
+```{r warning=F,error=F,message=F}
+# Descriptive table of the self_regulation scores stratified by exposure and intensity
+# Prenatal 
+t1 = df %>% select(c(trimester,trimester_int,erq_cog,erq_exp,bpm_att,bpm_att_p,swan_hyperactive,swan_inattentive)) %>%
+  tbl_strata(
+    strata = trimester,
+    .tbl_fun =
+      ~ .x %>%
+      tbl_summary(by = trimester_int,
+        missing_text = "NA",
+        type = list(erq_cog~'continuous',
+                    erq_exp~'continuous',
+                    bpm_att~'continuous',
+                    bpm_att_p~'continuous',
+                    swan_hyperactive~'continuous',
+                    swan_inattentive~'continuous'
+                   ),
+    statistic = all_continuous() ~ "{mean}") %>%
+      add_n() %>% add_p(test=all_continuous() ~ "t.test"),
+    .header = "**{strata}**"
+  ) 
+
+
+ t1 %>%
+  modify_header(label = "**Score**", p.value = "**P**") %>% 
+  modify_caption("**Self Regulation Summary for Prenatal(SDP)**")  %>%  as_kable_extra(booktabs = TRUE) %>%
+  kableExtra::kable_styling(font_size = 7)
+```
+
+```{r}
+# Descriptive table of the self_regulation scores stratified by exposure and intensity
+# Postnatal 
+t2 = df %>% select(c(postpartum,postpartum_int,erq_cog,erq_exp,bpm_att,bpm_att_p,swan_hyperactive,swan_inattentive)) %>%
+  tbl_strata(
+    strata = postpartum,
+    .tbl_fun =
+      ~ .x %>%
+      tbl_summary(by = postpartum_int,
+        missing_text = "NA",
+        type = list(erq_cog~'continuous',
+                    erq_exp~'continuous',
+                    bpm_att~'continuous',
+                    bpm_att_p~'continuous',
+                    swan_hyperactive~'continuous',
+                    swan_inattentive~'continuous'
+                   ),
+    statistic = all_continuous() ~ "{mean}") %>%
+      add_n() %>% add_p(),
+    .header = "**{strata}**"
+  ) 
+
+
+ t2 %>%
+  modify_header(label = "**Score**", p.value = "**P**") %>% 
+  modify_caption("**Self Regulation Summary for Postnatal(ETS)**")  %>%  as_kable_extra(booktabs = TRUE) %>%
+  kableExtra::kable_styling(font_size = 7,latex_options = "scale_down")
+```
+
+From the two summary table (TABLE 7,8), we can only see that for second trimester, higher intensity is associated with lower erq scores and higher bpm and swan scores. For postnatal, we see different patterns: for postnatal timing 1, higher intensity is associated with lower erq scores while timing 2, higher intensity is associated with slightly higher erq scores. However, we should not rely ourselves too much on such observations since we can also tell from the table that either the P-values associated to almost all comparisons are non significant or some groupings only have 1 observation to give a statistic. 
+
+We would also to look at the correalations between those variables.
+
+```{r warning=F,error=F,message=F}
+# Correlation penal pair of timing and intensity of self_regulation
+pairs.panels(df[,c("trimester","trimester_int",'postpartum','postpartum_int','erq_cog','erq_exp','bpm_att','bpm_att_p','swan_hyperactive','swan_inattentive')],
+             smooth = F,      # If TRUE, draws loess smooths
+             scale = FALSE,      # If TRUE, scales the correlation text font
+             density = TRUE,     # If TRUE, adds density plots and histograms
+             ellipses = F,    # If TRUE, draws ellipses
+             method = "pearson", # Correlation method (also "spearman" or "kendall")
+             pch = 21,           # pch symbol
+             lm = T,         # If TRUE, plots linear fit rather than the LOESS (smoothed) fit
+             cor = T,         # If TRUE, reports correlations
+             jiggle = FALSE,     # If TRUE, data points are jittered
+             factor = 2,         # Jittering factor
+             hist.col = 8,       # Histograms color
+             stars = TRUE,       # If TRUE, adds significance level with stars
+             ci = TRUE)          # If TRUE, adds confidence intervals
+```
+
+From the panel, we can see that for timing both prenatal(trimester) and postnatal(postpartum), there are generally negative association between each of the score that we selected. And also by observing the regression line we can see a similar down warding trend. This implies that earlier trimester, which is indication of earlier first exposure of SDP would lead to higher scores. A higher score in the selected questions means more potential problems with self_regulation. The intensity variable has positive correlation with the scores. Through interpretation, we can conclude that it implies as the intensity of SDP exposure increases, there may be an up warding trend of the scores, meaning more problems with self_regulation behavior. The respective relationships between each bivariate scores are positively correlated with different slopes. This is also intuitive that higher scores of one question would normally mean higher score on another related questions, indicating consistency of the data. 
+
+Before coming to the final conclusion in this section, we want to highlight the differences between erq_cog and erq_exp scores. cog correspond to Cognitive Reappraisal while exp correspond to Expressive Suppression. By looking carefully through the original questions that was answered, we realize that their trends should be considered separately. Higher cog scores means better regulation while lower exp means better regulation. So we decided to explicitely look at these two variable in particular.
+
+```{r,fig.height = 4, fig.width = 8, fig.align = "center"}
+# analysis of erq score at prenatal period
+df %>% pivot_longer(c(erq_cog,erq_exp),names_to = 'score_type',values_to = 'score') %>% filter(!is.na(trimester)) %>% 
+  ggplot(aes(x=score_type,y=score,fill=as.factor(trimester))) + geom_boxplot() + facet_wrap(~as.factor(trimester_int)) + 
+       labs(x='erq score type',y='score',title='Summary of erq scores facet by trimester intensity',fill='Trimester') + 
+       theme(
+        axis.title=element_text(size=10,face="bold"))
+```
+
+To compare, we can see that both mean erq score for trimester 2 is higher for intensity 2 in comparion to 4 and we do not have more data to compare the thrid trimester.
+
+```{r,fig.height = 4, fig.width = 8, fig.align = "center"}
+# analysis with erq scores at postntal period
+df %>% pivot_longer(c(erq_cog,erq_exp),names_to = 'score_type',values_to = 'score') %>% filter(!is.na(postpartum)) %>% 
+  ggplot(aes(x=score_type,y=score,fill=as.factor(postpartum))) + geom_boxplot() + facet_wrap(~as.factor(postpartum_int)) + 
+       labs(x='erq score type',y='score',title='Summary of erq scores facet by postpartum intensity',fill='Postpartum Timepoints') + 
+       theme(
+        axis.title=element_text(size=10,face="bold"))
+```
+
+The trend for postpartum is more obscure and we are not able to tell anything form this graph. 
+
+So our general conclusion in this section is as follows: Given the condition of data that we have, we focused on interpreting the effects of pre-natal SDP exposure in terms of time and intensity on adolescents' self-regulation problems. Although we do not obtain all statistical significant outcomes, due to the limited size of our data, we observe some consistent and genearlized patterns: earlier first-time exposure and higher cumulative intensity of exposure may be potential risk factors of worse condition of adolescent's self-regulation behavior. 
+
+## Externalizing Problems
+Then we would like to focus of externalizing problems. The most intuitive indicator of externalizing problems would be bpm_score in terms of externalizing. Since we also have records about internalizing problems, we would like to also include that in this section for an additional reference. We follow the simillar pattern of exploring as above: first see the general trend of prenatal exposure vs postnatal and then look deeper into how, in each phases, exposure time and intensity may impact adolescent externalizing behavior.
+
+Through looking at the bmp scores of externalizing and internalizing between prenatal vs posnatal from the above table(bpm_ext,bpm_int,bpm_ext_p,bpm_int_p), although the P-value does not indicate statistical significance, again, this may be due to the quality of our data, we can see similar numerical pattern in all the scores, postnatal has generally lower scores than prenatal. We would like to expolre the relationship between time and intensity.
+
+```{r warning=F,error=F,message=F}
+# Descriptive table of the externalizing scores stratified by exposure and intensity
+# Prenatal 
+t3 = df %>% select(c(trimester,trimester_int,bpm_ext,bpm_int,bpm_ext_p,bpm_int_p)) %>%
+  tbl_strata(
+    strata = trimester,
+    .tbl_fun =
+      ~ .x %>%
+      tbl_summary(by = trimester_int,
+        missing_text = "NA",
+        type = list(everything() ~ 'continuous'
+                   ),
+    statistic = all_continuous() ~ "{mean}") %>%
+      add_n() %>% add_p(test=all_continuous() ~ "t.test"),
+    .header = "**{strata}**"
+  ) 
+
+
+ t3 %>%
+  modify_header(label = "**Score**", p.value = "**P**") %>% 
+  modify_caption("**Externalizing Summary for Prenatal(SDP)**")  %>%  as_kable_extra(booktabs = TRUE) %>%
+  kableExtra::kable_styling(font_size = 7)
+```
+
+```{r warning=F,error=F,message=F}
+# Descriptive table of the externalizing behavior scores stratified by exposure and intensity
+# Postnatal 
+t4 = df %>% select(c(postpartum,postpartum_int,bpm_ext,bpm_int,bpm_ext_p,bpm_int_p)) %>%
+  tbl_strata(
+    strata = postpartum,
+    .tbl_fun =
+      ~ .x %>%
+      tbl_summary(by = postpartum_int,
+        missing_text = "NA",
+        type = list(everything() ~ 'continuous'
+                   ),
+    statistic = all_continuous() ~ "{mean}") %>%
+      add_n() %>% add_p(),
+    .header = "**{strata}**"
+  ) 
+
+
+ t4 %>%
+  modify_header(label = "**Score**", p.value = "**P**") %>% 
+  modify_caption("**Externalizing Summary for Postnatl(ETS)**")  %>%  as_kable_extra(booktabs = TRUE) %>%
+  kableExtra::kable_styling(font_size = 7,latex_options = "scale_down")
+```
+
+Similar Conclusion as to the self_regulation section.(TABLE 9,10) For prenatal, the groupings are not limited and for postnatal comparison, the number of observations in each group is limited to draw more robust conclusion as well as the P-values. 
+
+We then move on to look at their correlations between each other.
+
+```{r}
+# Correlation penal pair of timing and intensity of self_regulation
+pairs.panels(df[,c("trimester","trimester_int","postpartum","postpartum_int",'bpm_ext','bpm_int','bpm_ext_p','bpm_int_p')],
+             smooth = F,      # If TRUE, draws loess smooths
+             scale = FALSE,      # If TRUE, scales the correlation text font
+             density = TRUE,     # If TRUE, adds density plots and histograms
+             ellipses = F,    # If TRUE, draws ellipses
+             method = "spearman", # Correlation method (also "spearman" or "kendall")
+             pch = 21,           # pch symbol
+             lm = T,         # If TRUE, plots linear fit rather than the LOESS (smoothed) fit
+             cor = T,         # If TRUE, reports correlations
+             jiggle = FALSE,     # If TRUE, data points are jittered
+             factor = 2,         # Jittering factor
+             hist.col = 8,       # Histograms color
+             stars = TRUE,       # If TRUE, adds significance level with stars
+             ci = TRUE)          # If TRUE, adds confidence intervals
+```
+
+By plotting time and intensity together, we can observe that for timing, both prenatal(trimester) and postnatal(postpartum) shows negative correlation with the externalizing and internalizing scores, meaning as the timing of first exposure to SDP decreases, the score decreases. This implies earlier exposure to SDP may be a risk factor to adolescent externalizing behavior as well as internalizing. On the other hand, for intensity variables, both prenatal and postnatal have positive correlation to the scores in general. This implies higher intensity of exposure to SDP may be a risk factor to adolescent externalizing behavior. 
+
+## Substance Use Problem
+
+The substance use section should contain analysis of how SDP/EST would impact adolescent's substanse use behavior. From the data quality check section, we have found out that variables related to this problem is almost entirely missing, not to mention if we startify them by timing and intensity. Here's the output
+
+```{r}
+# Compute substance use summary tables
+cig_ever = sum(df$cig_ever %in% ' 1')
+num_cig = sum(!is.na(df$num_cigs_30))
+ecig_ever = sum(df$e_cig_ever%in%' 1')
+num_ecig = sum(!is.na(df$num_e_cigs_30))
+mj_ever = sum(df$mj_ever %in% ' 1')
+num_mj = sum(!is.na(df$num_mj_30))
+al_ever = sum(df$alc_ever %in% ' 1')
+num_al = sum(!is.na(df$num_alc_30))
+
+su_tab = as.data.frame(cbind(c(cig_ever,ecig_ever,mj_ever,al_ever),c(num_cig,num_ecig,num_mj,num_al)))
+rownames(su_tab) = c('Cigarette','E-cigarette','Marijuana','Alcohol')
+colnames(su_tab) = c('Number of YES','Cases with reporting')
+
+# Report substance use summary table
+su_tab %>% kable(booktabs = TRUE, caption = "Summary table of Substance use") %>%
+  kable_styling(full_width = TRUE, latex_options = "hold_position") 
+```
+
+From the summary table, we can see the among the total of 49 observations in our data, only 1,3,3,5 has reported YES to questions 'Have you ever' used cigarette, E-cigarette, Marijuana, and alcohol respectively and 1,2,3,4 observations reported a number of substance that they used. And this does not match to previous question, for example E-cigratte and alcohol. So we argue that with the current condition of data that we have, there's no point conducting analysis with substance use behavior and the main focus should be acquiring better data.
+
+# Conclusion and Limitation
+
+Based on the data and variables we have, we conducted an exploratory data analysis aiming to examine effects of SDP/ETS on adolescent self-regulation, substance use, and externalizing. We created timing and intensity of effects of SDP and ETS to specify the effects. We conducted analysis in each of the three behavior dimensions of interest and used summary tables and association panels to identify their effects. Due to the limitation and quality of data that we have, we have identified patterns as follows that may serve as directions to more prudent analysis.
+
+For self-regulation, we found out that earlier exposure to SDP/ETS may be associated to less regulation and higher cumulative intensity of exposure is associated with less regulation. Such pattern is similar for both prenatal and postnatal periods.
+
+For externalizing, we found out that earlier exposure to SDP/ETS may be associated to more externalizing behavior and higher cumulative intensity of exposure is associated with more externalizing behavior. Such pattern is similar for both prenatal and postnatal periods.
+
+Those findings in line with the general belief that smoke exposure is a risk factor to baby's health especially during the pregnancy phase. Take into note that we still need to have more robus statistical testings and should certain not treat such correalations as causations.
+
+There are several crucial limitations to the data that may require further analysis if better quality of data are presented. First of all, the data size is very limited with a lot of NAs and missing. It is really hard to capture trends with different sub categories since many only contains 1 or non observations. And the data is highly unbalanced making future statistical analysis and models hard to implement. Secondly, the data contains primarily self-reported question scores and the only 'real' quantitative measure is Urine cotinine. This may suffer a great deal of bias in terms of the validity of outcomes that we want to measure. Moreover, the substance use related variables are lacking for the adolescent as most values are NA or not useful. Again this may also due to the nature of self-reporting surveys and future analysis may create methods to work around with it such as weighting and matching. 
+
+\newpage
+
+\# Code Appendix:
+
+```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+
+```
