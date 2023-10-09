@@ -7,7 +7,7 @@ This is a public repository to PHP 2550 Practical Data Analysis Project 1.
 
 The project is an exploratory data analysis of the data driven by the research goals of the a study.
 
-The study is about examine the association between smoking during pregnancy (SDP) and environmental tobacco smoke (ETS) exposure and self-regulation, externalizing behavior, and substance use.
+<br>The study is about examine the association between smoking during pregnancy (SDP) and environmental tobacco smoke (ETS) exposure and self-regulation, externalizing behavior, and substance use.
 
 It has three main aims:
 
